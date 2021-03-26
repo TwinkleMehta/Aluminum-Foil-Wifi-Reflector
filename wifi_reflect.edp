@@ -1,0 +1,102 @@
+real a = 5, b = 5, c = 0.1;
+border a00(t=0, 1) {x=a*t; y=0; label=1;}
+border a10(t=0, 1) {x=a; y=b*t; label=1;}
+border a20(t=1, 0) {x=a*t; y=b; label=1;}
+border a30(t=1, 0) {x=0; y=b*t; label=1;}
+border a01(t=0, 1) {x=c+(a-c*2)*t; y=c; label=1;}
+border a11(t=0, 1) {x=a-c; y=c+(b-c*2)*t; label=1;}
+border a21(t=1, 0) {x=c+(a-c*2)*t; y=b-c; label=1;}
+border a31(t=1, 0) {x=c; y=c+(b-c*2)*t; label=1;}
+
+// **** REFLECTOR - START ***
+// **** PARAMETERS 'g' and 'h' MUST BE CHANGED FOR EACH REFLECTOR ANGLE ***
+// 0 degree reflector --> g = h = 0.00
+// 10 degree reflector --> g = h = 0.04
+// 20 degree reflector --> g = h = 0.09
+// 30 degree reflector --> g = h = 0.14
+// 40 degree reflector --> g = h = 0.21
+
+real len1 = 0.25;
+
+real r = 2.5+0.01, s = 2.5, tk1 = 0.125, g = 0.04;
+border c00(t=0, 1) {x=r+len1*t; y=s+len1+tk1-g*t; label=3;}
+border c10(t=0, 1) {x=r; y=(s+len1)+tk1*t; label=3;}
+border c20(t=1, 0) {x=r+len1*t; y=s+len1-g*t; label=3;}
+border c30(t=1, 0) {x=r+len1; y=(s+len1-g)+tk1*t; label=3;}
+
+real p = 2.5-len1, q = 2.5, tk = 0.125, len = 0.25, h = 0.04;
+border b00(t=0, 1) {x=p+len*t; y=(q+len-h+tk)+h*t; label=3;}
+border b10(t=0, 1) {x=p; y=(q+len-h)+tk*t; label=3;}
+border b20(t=1, 0) {x=p+len*t; y=(q+len-h)+h*t; label=3;}
+border b30(t=1, 0) {x=p+len; y=(q+len)+tk*t; label=3;}
+// **** REFLECTOR - END ***
+
+
+int n=13;
+mesh Sh = buildmesh(a00(10*n) + a10(10*n) + a20(10*n) + a30(10*n)
+    + a01(10*n) + a11(10*n) + a21(10*n) + a31(10*n)
+    + b00(5*n) + b10(5*n) + b20(5*n)+ b30(5*n)
+    + c00(5*n) + c10(5*n) + c20(5*n) +  c30(5*n));
+plot(Sh, wait=1);
+
+border C(t=0, 2*pi){x=2.5+0.01*cos(t); y=2.5+0.01*sin(t); label=2;} // Access Point (Antenna)
+
+
+mesh Th = buildmesh(a00(10*n) + a10(10*n) + a20(10*n) + a30(10*n)
+    + a01(10*n) + a11(10*n) + a21(10*n) + a31(10*n) + C(10)
+    // );
+    + b00(5*n) + b10(5*n) + b20(5*n) + b30(5*n)
+    + c00(5*n) + c10(5*n) + c20(5*n) + c30(5*n));
+
+fespace Vh(Th, P1);
+ 
+func real wall() { // Surrounding walls  
+    if (Th(x,y).region == Th(0.05,0.05).region) { return 1; }
+    else { return 0; }
+}
+
+func real foil() { // Aluminum foil reflector 
+    if (Th(x,y).region == Th(p+(len/2),q+(1.5*tk)).region || Th(x,y).region == Th(r+(len1/2),s+(1.5*tk1)).region) { return 1; }
+    else { return 0; }
+}
+
+Vh<complex> v,w;
+
+Vh wallreflexion = 0.1;
+Vh<complex> wallabsorption = 0.1*1i;
+
+Vh foilreflexion = 0.999;
+Vh<complex> foilabsorption = 0.001*1i;
+
+Vh k = 104;
+
+problem muwave(v,w) = // Helmholtz equation
+    int2d(Th)(
+        (v*w*k^2)/(1+((wallreflexion+wallabsorption)*wall() + (foilreflexion+foilabsorption)*foil()))^2
+        - (dx(v)*dx(w)+dy(v)*dy(w))
+    )
+    + on(2, v=1);
+
+muwave;
+
+Vh vm = log(real(v)^2 + imag(v)^2);
+func real toRadians(real deg) {
+    real rads = (deg*pi)/180;
+    return rads;
+}
+
+real wifipositionx = 2.5; 
+real wifipositiony = 2.5;  
+real hyp = 2;
+real xlength45 = hyp*sin(toRadians(45));
+real xlength22 = hyp*sin(toRadians(22.5));
+real ylength45 = hyp*cos(toRadians(45));
+real ylength22 = hyp*sin(toRadians(22.5));
+
+cout << vm(wifipositionx-xlength45,wifipositiony-ylength45) << "\n"; // 2 left from center (-45deg)
+cout  << vm(wifipositionx-xlength22,wifipositiony-ylength22) << "\n"; // 1 left from center (-22.5deg)
+cout << vm(wifipositionx,wifipositiony-hyp) << "\n"; // 2m away (0deg)
+cout << vm(wifipositionx+xlength22,wifipositiony-ylength22) << "\n"; // 1 right from center(22.5deg)
+cout << vm(wifipositionx+xlength45,wifipositiony-ylength45) << "\n"; // 2 right from center (45deg)
+
+plot(vm, wait=1, fill=true, value=0, nbiso=65);
